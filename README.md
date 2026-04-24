@@ -7,6 +7,7 @@ Extensão local para equipes que atendem um único número no WhatsApp Web. Ela 
 - status da conversa;
 - quem pegou a conversa;
 - ações para pegar, marcar pendente, resolver ou liberar.
+- lista resumida das conversas no popup da extensão.
 
 ## Como funciona
 
@@ -70,6 +71,7 @@ http://192.168.0.10:3333
 6. Clique no ícone da extensão.
 7. Informe o nome do atendente.
 8. Informe o endereço da API.
+9. Use o painel que aparece no canto inferior direito do WhatsApp Web para marcar as conversas.
 
 No seu próprio computador servidor, pode usar:
 
