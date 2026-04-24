@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Suporte WhatsApp</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <h1>Suporte WhatsApp</h1>
+      <label>
+        Nome do atendente
+        <input id="attendantName" type="text" placeholder="Ex: Maria">
+      </label>
+      <label>
+        Endereço da API
+        <input id="apiUrl" type="url" placeholder="http://192.168.0.10:3333">
+      </label>
+      <button id="save">Salvar</button>
+      <p id="status" role="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

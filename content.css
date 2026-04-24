@@ -1,0 +1,144 @@
+#sw-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 999999;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  color: #1f2933;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  border: 1px solid #d6dde5;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+#sw-panel * {
+  box-sizing: border-box;
+}
+
+.sw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  color: #ffffff;
+  background: #0f766e;
+}
+
+.sw-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sw-small {
+  margin: 2px 0 0;
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.sw-body {
+  padding: 12px;
+}
+
+.sw-row {
+  margin-bottom: 10px;
+}
+
+.sw-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #52616f;
+  text-transform: uppercase;
+}
+
+.sw-value {
+  min-height: 20px;
+  font-size: 13px;
+  color: #1f2933;
+  overflow-wrap: anywhere;
+}
+
+.sw-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2f7;
+  color: #334e68;
+}
+
+.sw-status.pending {
+  background: #fff7db;
+  color: #8a5d00;
+}
+
+.sw-status.assigned {
+  background: #dff8ed;
+  color: #0b6b4f;
+}
+
+.sw-status.resolved {
+  background: #e5edf8;
+  color: #244c80;
+}
+
+.sw-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sw-actions button,
+.sw-footer button {
+  min-height: 34px;
+  border: 1px solid #c7d1db;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #1f2933;
+}
+
+.sw-actions button:hover,
+.sw-footer button:hover {
+  background: #eef2f7;
+}
+
+.sw-actions .primary {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.sw-actions .primary:hover {
+  background: #115e59;
+}
+
+.sw-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #e5eaf0;
+  background: #f8fafc;
+}
+
+.sw-error {
+  margin-top: 8px;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.sw-hidden {
+  display: none;
+}

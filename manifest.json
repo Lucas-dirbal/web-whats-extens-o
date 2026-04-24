@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Suporte Compartilhado para WhatsApp Web",
+  "version": "1.0.0",
+  "description": "Painel simples para atribuir conversas do WhatsApp Web entre atendentes.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Suporte WhatsApp",
+    "default_popup": "popup.html"
+  }
+}
