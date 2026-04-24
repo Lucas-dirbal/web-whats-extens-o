@@ -14,6 +14,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Log de requisições para facilitar o debug
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 ensureDataFile();
 
 app.get("/health", (req, res) => {
@@ -110,8 +116,15 @@ function ensureDataFile() {
 }
 
 function readData() {
-  const content = fs.readFileSync(DATA_FILE, "utf8").replace(/^\uFEFF/, "");
-  return JSON.parse(content);
+  try {
+    const content = fs.readFileSync(DATA_FILE, "utf8").replace(/^\uFEFF/, "");
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("Erro ao ler arquivo de dados, resetando...", error);
+    const defaultData = { conversations: {} };
+    writeData(defaultData);
+    return defaultData;
+  }
 }
 
 function writeData(data) {

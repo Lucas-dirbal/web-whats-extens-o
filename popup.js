@@ -48,16 +48,18 @@ async function loadConversations() {
   const url = normalizeApiUrl(apiUrl.value.trim() || DEFAULT_API_URL);
 
   try {
-    const response = await fetch(`${url}/conversations`);
+    const response = await fetch(`${url}/conversations`).catch(e => {
+      throw new Error("Não foi possível conectar à API. Verifique se o servidor está rodando.");
+    });
 
     if (!response.ok) {
-      throw new Error(`API respondeu ${response.status}`);
+      throw new Error(`API respondeu com erro ${response.status}`);
     }
 
     const conversations = await response.json();
     renderConversations(conversations);
   } catch (error) {
-    conversationList.innerHTML = '<p class="empty">API offline ou endereço incorreto.</p>';
+    conversationList.innerHTML = `<p class="empty">${escapeHtml(error.message)}</p>`;
   }
 }
 

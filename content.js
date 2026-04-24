@@ -1,18 +1,11 @@
 (function () {
-  if (window.__swSupportExtensionLoaded) {
-    return;
-  }
-
+  if (window.__swSupportExtensionLoaded) return;
   window.__swSupportExtensionLoaded = true;
 
   const DEFAULT_API_URL = "http://localhost:3333";
   const REFRESH_MS = 3000;
 
-  let config = {
-    attendantName: "",
-    apiUrl: DEFAULT_API_URL
-  };
-
+  let config = { attendantName: "", apiUrl: DEFAULT_API_URL };
   let activeChat = null;
   let activeState = null;
   let collapsed = false;
@@ -37,16 +30,11 @@
   ]);
 
   function getWelcomeMessage() {
-    return `Seja bem-vindo(a) à Interface Sistemas Inteligentes! Aqui é o ${config.attendantName} e estou à disposição para ajudá-lo(a).`;
+    return `Ola, seja bem-vindo(a) a Interface Sistemas Inteligentes. Aqui e ${config.attendantName}; como posso ajudar?`;
   }
 
   function getClosingMessage() {
-    return [
-      "Atendimento Encerrado",
-      "",
-      "Agradecemos pelo seu contato e pela confiança na Interface Sistemas Inteligentes.",
-      "Caso precise de mais informações ou tenha outras dúvidas, estaremos sempre à disposição para atendê-lo(a)."
-    ].join("\n");
+    return "Atendimento concluido. Agradecemos seu contato e a confianca na Interface Sistemas Inteligentes. Sempre que precisar, estamos a disposicao.";
   }
 
   function loadConfig() {
@@ -55,9 +43,11 @@
         attendantName: items.attendantName || "",
         apiUrl: normalizeApiUrl(items.apiUrl || DEFAULT_API_URL)
       };
+
       if (items.apiUrl !== config.apiUrl) {
         chrome.storage.sync.set({ apiUrl: config.apiUrl });
       }
+
       renderPanel();
       startRefresh();
     });
@@ -70,21 +60,15 @@
 
   function getChatTitle() {
     const main = document.querySelector("#main");
-    if (!main) return "";
-
-    const header = main.querySelector("header");
+    const header = main?.querySelector("header");
     if (!header) return "";
 
     const headerRect = header.getBoundingClientRect();
     const candidates = Array.from(header.querySelectorAll("span[title], span[dir='auto']"))
-      .map((element) => ({
-        element,
-        text: getElementLabel(element)
-      }))
+      .map((element) => ({ element, text: getElementLabel(element) }))
       .filter(({ element, text }) => {
         if (!text) return false;
         if (ignoredHeaderTexts.has(text.toLowerCase())) return false;
-        if (element.closest("#sw-header-assign")) return false;
         return isVisible(element);
       });
 
@@ -97,8 +81,7 @@
   }
 
   function getChatId(title) {
-    if (!title) return "";
-    return title.toLowerCase().replace(/\s+/g, " ").trim();
+    return String(title || "").toLowerCase().replace(/\s+/g, " ").trim();
   }
 
   function ensurePanel() {
@@ -160,24 +143,15 @@
       renderPanel();
     });
 
-    const refresh = panel.querySelector("#sw-refresh");
-    if (refresh) refresh.addEventListener("click", refreshActiveChat);
-
-    const popup = panel.querySelector("#sw-open-popup");
-    if (popup) {
-      popup.addEventListener("click", () => showError("Clique no icone da extensao no Chrome para configurar."));
-    }
-
-    const start = panel.querySelector("#sw-start");
-    if (start) start.addEventListener("click", startAttendance);
-
-    const pending = panel.querySelector("#sw-pending");
-    if (pending) {
-      pending.addEventListener("click", () => updateConversation("pending", state.assignedTo || config.attendantName));
-    }
-
-    const complete = panel.querySelector("#sw-complete");
-    if (complete) complete.addEventListener("click", completeAttendance);
+    panel.querySelector("#sw-refresh")?.addEventListener("click", refreshActiveChat);
+    panel.querySelector("#sw-open-popup")?.addEventListener("click", () => {
+      showError("Clique no icone da extensao no Chrome para configurar.");
+    });
+    panel.querySelector("#sw-start")?.addEventListener("click", startAttendance);
+    panel.querySelector("#sw-pending")?.addEventListener("click", () => {
+      updateConversation("pending", state.assignedTo || config.attendantName);
+    });
+    panel.querySelector("#sw-complete")?.addEventListener("click", completeAttendance);
   }
 
   function canAct() {
@@ -204,7 +178,7 @@
       apiUrl: config.apiUrl,
       path,
       method: options.method || "GET",
-      body: options.body ? JSON.parse(options.body) : undefined
+      body: options.body ? (typeof options.body === "string" ? JSON.parse(options.body) : options.body) : undefined
     });
 
     if (!response?.ok) {
@@ -245,12 +219,12 @@
       clearError();
       activeState = await api(`/conversations/${encodeURIComponent(activeChat.id)}`, {
         method: "PUT",
-        body: JSON.stringify({
+        body: {
           title: activeChat.title,
           status,
           assignedTo,
           updatedBy: config.attendantName
-        })
+        }
       });
       renderPanel();
     } catch (error) {
@@ -261,55 +235,49 @@
   async function startAttendance() {
     if (!canAct()) return;
 
-    try {
-      isSendingMessage = true;
-      renderPanel();
-      clearError();
+    await runSendingAction(async () => {
       await sendWhatsAppMessage(getWelcomeMessage());
       await updateConversation("assigned", config.attendantName);
-    } catch (error) {
-      isSendingMessage = false;
-      renderPanel();
-      showError(error.message || "Nao consegui iniciar o atendimento.");
-      return;
-    }
-
-    isSendingMessage = false;
-    renderPanel();
+    }, "Nao consegui iniciar o atendimento.");
   }
 
   async function completeAttendance() {
     if (!canAct()) return;
 
+    await runSendingAction(async () => {
+      await updateConversation("unassigned", "");
+      await sendWhatsAppMessage(getClosingMessage());
+    }, "Nao consegui concluir o atendimento.");
+  }
+
+  async function runSendingAction(action, fallbackMessage) {
     try {
       isSendingMessage = true;
       renderPanel();
       clearError();
-      await updateConversation("unassigned", "");
-      await sendWhatsAppMessage(getClosingMessage());
+      await action();
     } catch (error) {
+      showError(error.message || fallbackMessage);
+    } finally {
       isSendingMessage = false;
       renderPanel();
-      showError(error.message || "Nao consegui concluir o atendimento.");
-      return;
     }
-
-    isSendingMessage = false;
-    renderPanel();
   }
 
   async function sendWhatsAppMessage(message) {
+    const cleanMessage = normalizeOutgoingMessage(message);
     const input = findMessageInput();
+
     if (!input) {
       throw new Error("Nao encontrei o campo de mensagem do WhatsApp.");
     }
 
-    input.focus();
     clearMessageInput(input);
-    await wait(100);
-    insertMessageText(input, message);
-
-    await wait(500);
+    await wait(120);
+    insertMessageText(input, cleanMessage);
+    await wait(350);
+    dedupeDraft(input, cleanMessage);
+    await wait(150);
 
     const sendButton = findSendButton();
     if (!sendButton) {
@@ -321,10 +289,10 @@
   }
 
   function clearMessageInput(input) {
+    input.focus();
+
     const selection = window.getSelection();
     const range = document.createRange();
-
-    input.focus();
     range.selectNodeContents(input);
     selection.removeAllRanges();
     selection.addRange(range);
@@ -340,11 +308,18 @@
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: message }));
   }
 
-  function findMessageInput() {
-    const main = document.querySelector("#main");
-    if (!main) return null;
+  function dedupeDraft(input, message) {
+    const currentText = normalizeOutgoingMessage(input.textContent || "");
+    const doubled = `${message}${message}`;
 
-    const footer = main.querySelector("footer");
+    if (!currentText.includes(doubled)) return;
+
+    clearMessageInput(input);
+    insertMessageText(input, message);
+  }
+
+  function findMessageInput() {
+    const footer = document.querySelector("#main footer");
     if (!footer) return null;
 
     const inputs = Array.from(footer.querySelectorAll("[contenteditable='true'][role='textbox'], [contenteditable='true']"));
@@ -352,15 +327,18 @@
   }
 
   function findSendButton() {
-    const main = document.querySelector("#main");
-    const footer = main?.querySelector("footer");
+    const footer = document.querySelector("#main footer");
     if (!footer) return null;
 
-    const labelled = Array.from(footer.querySelectorAll("button, div[role='button']"))
-      .find((element) => {
-        const label = normalizeText(element.getAttribute("aria-label") || element.getAttribute("title") || "");
-        return /enviar|send/i.test(label) && isVisible(element);
-      });
+    const sendIcon = footer.querySelector("span[data-icon='send']");
+    if (sendIcon) {
+      return sendIcon.closest("button, div[role='button']");
+    }
+
+    const labelled = Array.from(footer.querySelectorAll("button, div[role='button']")).find((element) => {
+      const label = normalizeText(element.getAttribute("aria-label") || element.getAttribute("title") || "");
+      return /enviar|send/i.test(label) && isVisible(element);
+    });
 
     if (labelled) return labelled;
 
@@ -388,6 +366,10 @@
   }
 
   function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function normalizeOutgoingMessage(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
