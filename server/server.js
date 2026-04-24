@@ -61,6 +61,7 @@ app.put("/conversations/:id", (req, res) => {
     status: normalizeStatus(req.body.status),
     assignedTo: String(req.body.assignedTo || ""),
     updatedBy: String(req.body.updatedBy || ""),
+    lastIncomingMarker: String(req.body.lastIncomingMarker || current.lastIncomingMarker || ""),
     updatedAt: now
   };
 
