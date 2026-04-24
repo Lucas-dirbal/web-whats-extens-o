@@ -83,6 +83,33 @@ h2 {
   background: #f8fafc;
 }
 
+.conversation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.conversation-filters .filter {
+  width: auto;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #c7d1db;
+  color: #334e68;
+  background: #f8fafc;
+  font-size: 11px;
+}
+
+.conversation-filters .filter:hover {
+  background: #eef2f7;
+}
+
+.conversation-filters .filter.active {
+  border-color: #0f766e;
+  color: #ffffff;
+  background: #0f766e;
+}
+
 .conversation-list {
   display: grid;
   gap: 8px;

@@ -6,6 +6,9 @@ const save = document.getElementById("save");
 const status = document.getElementById("status");
 const refresh = document.getElementById("refresh");
 const conversationList = document.getElementById("conversationList");
+const filterButtons = Array.from(document.querySelectorAll(".filter"));
+let conversationsCache = [];
+let activeFilter = "all";
 
 const statusLabels = {
   unassigned: "Sem atendente",
@@ -38,6 +41,13 @@ save.addEventListener("click", () => {
 });
 
 refresh.addEventListener("click", loadConversations);
+filterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    activeFilter = button.dataset.filter || "all";
+    updateFilterButtons();
+    renderConversations(conversationsCache);
+  });
+});
 
 function normalizeApiUrl(value) {
   const normalized = value.replace(/\/+$/, "");
@@ -56,20 +66,23 @@ async function loadConversations() {
       throw new Error(`API respondeu com erro ${response.status}`);
     }
 
-    const conversations = await response.json();
-    renderConversations(conversations);
+    conversationsCache = await response.json();
+    renderConversations(conversationsCache);
   } catch (error) {
+    conversationsCache = [];
     conversationList.innerHTML = `<p class="empty">${escapeHtml(error.message)}</p>`;
   }
 }
 
 function renderConversations(conversations) {
-  if (!conversations.length) {
+  const filteredConversations = filterConversations(conversations);
+
+  if (!filteredConversations.length) {
     conversationList.innerHTML = '<p class="empty">Nenhuma conversa registrada ainda.</p>';
     return;
   }
 
-  conversationList.innerHTML = conversations
+  conversationList.innerHTML = filteredConversations
     .slice(0, 20)
     .map((conversation) => {
       const status = conversation.status || "unassigned";
@@ -86,6 +99,20 @@ function renderConversations(conversations) {
       `;
     })
     .join("");
+}
+
+function filterConversations(conversations) {
+  if (activeFilter === "all") return conversations;
+
+  return conversations.filter((conversation) => {
+    return (conversation.status || "unassigned") === activeFilter;
+  });
+}
+
+function updateFilterButtons() {
+  filterButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.filter === activeFilter);
+  });
 }
 
 function escapeHtml(value) {

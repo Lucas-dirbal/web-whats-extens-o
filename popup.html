@@ -24,6 +24,13 @@
           <h2>Conversas</h2>
           <button id="refresh" type="button">Atualizar</button>
         </div>
+        <div class="conversation-filters" role="group" aria-label="Filtrar conversas por status">
+          <button class="filter active" type="button" data-filter="all">Todas</button>
+          <button class="filter" type="button" data-filter="pending">Pendentes</button>
+          <button class="filter" type="button" data-filter="assigned">Em atendimento</button>
+          <button class="filter" type="button" data-filter="resolved">Resolvidas</button>
+          <button class="filter" type="button" data-filter="unassigned">Sem atendente</button>
+        </div>
         <div id="conversationList" class="conversation-list">
           <p class="empty">Configure a API para carregar.</p>
         </div>

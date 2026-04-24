@@ -52,6 +52,10 @@
     ]);
   }
 
+  function getInactivityClosingMessage() {
+    return formatAttendantMessage("Atendimento encerrado devido à ausência de retorno. Caso precise de suporte, estaremos à disposição.");
+  }
+
   function loadConfig() {
     chrome.storage.sync.get(["attendantName", "apiUrl"], (items) => {
       config = {
@@ -186,6 +190,8 @@
           <button class="primary" id="sw-start" ${!canAct() ? "disabled" : ""}>Iniciar atendimento</button>
           <button id="sw-pending" ${!canAct() ? "disabled" : ""}>Pendente</button>
           <button id="sw-complete" ${!canAct() ? "disabled" : ""}>Concluído</button>
+          <button class="danger" id="sw-finish" ${!canAct() ? "disabled" : ""}>Finalizar atendimento</button>
+          <button class="danger" id="sw-finish-inactivity" ${!canAct() ? "disabled" : ""}>Finalizar por Inatividade</button>
         </div>
         <div class="sw-message-section">
           <label class="sw-label" for="sw-message">Mensagem</label>
@@ -213,10 +219,10 @@
       showError("Clique no ícone da extensão no Chrome para configurar.");
     });
     panel.querySelector("#sw-start")?.addEventListener("click", startAttendance);
-    panel.querySelector("#sw-pending")?.addEventListener("click", () => {
-      updateConversation("pending", state.assignedTo || config.attendantName);
-    });
-    panel.querySelector("#sw-complete")?.addEventListener("click", completeAttendance);
+    panel.querySelector("#sw-pending")?.addEventListener("click", markPendingAttendance);
+    panel.querySelector("#sw-complete")?.addEventListener("click", resolveAttendance);
+    panel.querySelector("#sw-finish")?.addEventListener("click", finishAttendance);
+    panel.querySelector("#sw-finish-inactivity")?.addEventListener("click", finishAttendanceByInactivity);
     panel.querySelector("#sw-send-message")?.addEventListener("click", sendCustomMessage);
     panel.querySelector("#sw-message")?.addEventListener("input", (event) => {
       messageDraft = event.target.value;
@@ -272,23 +278,32 @@
   async function refreshActiveChat() {
     const title = getChatTitle();
     const id = getChatId(title);
+    let shouldRender = false;
 
     if (!id) {
       const hadActiveChat = Boolean(activeChat || activeState || uiError);
+      try {
+        clearError();
+        shouldRender = await moveUnreadResolvedChatsToPending();
+      } catch (error) {
+        showError(`Não consegui conectar na API: ${config.apiUrl}`);
+        shouldRender = true;
+      }
+
       activeChat = null;
       activeState = null;
-      clearError();
-      if (hadActiveChat) renderPanel();
+      if (hadActiveChat || shouldRender) renderPanel();
       return;
     }
 
-    let shouldRender = activeChat?.id !== id || activeChat?.title !== title;
+    shouldRender = activeChat?.id !== id || activeChat?.title !== title;
     const previousState = JSON.stringify(activeState);
     const previousError = uiError;
     activeChat = { id, title };
 
     try {
       clearError();
+      shouldRender = (await moveUnreadResolvedChatsToPending()) || shouldRender;
       const nextState = await api(`/conversations/${encodeURIComponent(id)}?title=${encodeURIComponent(title)}`);
       shouldRender = shouldRender || previousState !== JSON.stringify(nextState) || Boolean(previousError);
       activeState = nextState;
@@ -317,11 +332,52 @@
           lastIncomingMarker: status === "resolved" ? getLatestIncomingMessageMarker() : activeState?.lastIncomingMarker
         }
       });
+      if (status === "pending") {
+        await markActiveChatAsUnread();
+      }
       rememberResolvedIncomingMarker(status);
       renderPanel();
     } catch (error) {
       showError(`Não foi possível salvar na API: ${config.apiUrl}`);
     }
+  }
+
+  async function markPendingAttendance() {
+    if (!canAct()) return;
+
+    await updateConversation("pending", activeState?.assignedTo || config.attendantName);
+  }
+
+  async function moveUnreadResolvedChatsToPending() {
+    const unreadChats = getUnreadChatListChats();
+    if (!unreadChats.length) return false;
+
+    const conversations = await api("/conversations");
+    const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
+    let changedActiveChat = false;
+
+    for (const unreadChat of unreadChats) {
+      const conversation = conversationsById.get(unreadChat.id);
+      if (conversation?.status !== "resolved") continue;
+
+      const nextState = await api(`/conversations/${encodeURIComponent(unreadChat.id)}`, {
+        method: "PUT",
+        body: {
+          title: unreadChat.title,
+          status: "pending",
+          assignedTo: "",
+          updatedBy: config.attendantName || "cliente",
+          lastIncomingMarker: unreadChat.marker
+        }
+      });
+
+      if (activeChat?.id === unreadChat.id) {
+        activeState = nextState;
+        changedActiveChat = true;
+      }
+    }
+
+    return changedActiveChat;
   }
 
   async function moveResolvedChatToPendingOnIncomingMessage() {
@@ -353,6 +409,7 @@
         lastIncomingMarker: currentMarker
       }
     });
+    await markActiveChatAsUnread();
 
     return true;
   }
@@ -380,13 +437,28 @@
     }, "Não consegui iniciar o atendimento.");
   }
 
-  async function completeAttendance() {
+  async function resolveAttendance() {
+    if (!canAct()) return;
+
+    await updateConversation("resolved", config.attendantName);
+  }
+
+  async function finishAttendance() {
     if (!canAct()) return;
 
     await runSendingAction(async () => {
       await sendWhatsAppMessage(getClosingMessage());
       await updateConversation("resolved", config.attendantName);
     }, "Não consegui concluir o atendimento.");
+  }
+
+  async function finishAttendanceByInactivity() {
+    if (!canAct()) return;
+
+    await runSendingAction(async () => {
+      await sendWhatsAppMessage(getInactivityClosingMessage());
+      await updateConversation("unassigned", "");
+    }, "Não consegui finalizar por inatividade.");
   }
 
   async function sendCustomMessage() {
@@ -574,6 +646,92 @@
     return buttons[buttons.length - 1] || null;
   }
 
+  async function markActiveChatAsUnread() {
+    if (!activeChat?.title) return false;
+
+    const row = findChatListRowByTitle(activeChat.title);
+    if (row && hasUnreadIndicator(row)) return true;
+
+    if (row && await markChatListRowAsUnread(row)) return true;
+
+    return triggerMarkUnreadShortcut();
+  }
+
+  function findChatListRowByTitle(title) {
+    const pane = document.querySelector("#pane");
+    if (!pane) return null;
+
+    const id = getChatId(title);
+    return getChatListRows(pane).find((row) => getChatId(getChatListRowTitle(row)) === id) || null;
+  }
+
+  async function markChatListRowAsUnread(row) {
+    row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
+    row.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, cancelable: true, view: window }));
+    await wait(150);
+
+    const menuButton = findChatListRowMenuButton(row);
+    if (menuButton) {
+      menuButton.click();
+      await wait(250);
+
+      if (clickOpenMenuItem(/marcar como n[aã]o lida|mark as unread/i)) {
+        await wait(200);
+        return true;
+      }
+    }
+
+    row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, view: window }));
+    await wait(250);
+
+    if (clickOpenMenuItem(/marcar como n[aã]o lida|mark as unread/i)) {
+      await wait(200);
+      return true;
+    }
+
+    return false;
+  }
+
+  function findChatListRowMenuButton(row) {
+    const explicitButton = Array.from(row.querySelectorAll("button, [role='button']"))
+      .find((element) => {
+        const label = normalizeText(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""}`).toLowerCase();
+        return /menu|mais op[cç][oõ]es|more options|chat menu/.test(label) && isVisible(element);
+      });
+
+    if (explicitButton) return explicitButton;
+
+    const icon = row.querySelector("span[data-icon='down-context'], span[data-icon='chevron-down'], span[data-icon='menu']");
+    return icon?.closest("button, [role='button'], div") || null;
+  }
+
+  function clickOpenMenuItem(pattern) {
+    const menuItems = Array.from(document.querySelectorAll("[role='menuitem'], li, div[role='button']"))
+      .filter(isVisible);
+
+    const item = menuItems.find((element) => pattern.test(normalizeText(element.innerText || element.textContent || "").toLowerCase()));
+    if (!item) return false;
+
+    item.click();
+    return true;
+  }
+
+  function triggerMarkUnreadShortcut() {
+    const options = {
+      key: "U",
+      code: "KeyU",
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      altKey: true,
+      shiftKey: true
+    };
+
+    document.dispatchEvent(new KeyboardEvent("keydown", options));
+    window.dispatchEvent(new KeyboardEvent("keydown", options));
+    return false;
+  }
+
   function getLatestIncomingMessageMarker() {
     const main = document.querySelector("#main");
     if (!main) return "";
@@ -600,6 +758,77 @@
     const visibleText = messageElement.innerText || "";
     const match = visibleText.match(/\b\d{1,2}:\d{2}\b/);
     return match ? match[0] : "";
+  }
+
+  function getUnreadChatListChats() {
+    const pane = document.querySelector("#pane");
+    if (!pane) return [];
+
+    return getChatListRows(pane)
+      .map((row) => {
+        const title = getChatListRowTitle(row);
+        if (!title || !hasUnreadIndicator(row)) return null;
+
+        return {
+          id: getChatId(title),
+          title,
+          marker: getChatListRowMarker(row)
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function getChatListRows(pane) {
+    const rows = Array.from(pane.querySelectorAll("[role='row'], [role='listitem']"));
+    if (rows.length) return rows.filter(isVisible);
+
+    return Array.from(pane.querySelectorAll("div"))
+      .filter((element) => {
+        const title = getChatListRowTitle(element);
+        return title && isVisible(element);
+      });
+  }
+
+  function getChatListRowTitle(row) {
+    const candidates = Array.from(row.querySelectorAll("span[title]"))
+      .map((element) => getElementLabel(element))
+      .filter((text) => text && !ignoredHeaderTexts.has(text.toLowerCase()));
+
+    return candidates[0] || "";
+  }
+
+  function hasUnreadIndicator(row) {
+    const labelledUnread = Array.from(row.querySelectorAll("[aria-label], [title]")).some((element) => {
+      const label = normalizeText(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""}`).toLowerCase();
+      return /n[aã]o lida|não lidas|unread|unread message|mensage(ns|m)? n[aã]o lida/.test(label);
+    });
+
+    if (labelledUnread) return true;
+
+    return Array.from(row.querySelectorAll("span, div"))
+      .filter(isVisible)
+      .some((element) => {
+        const text = normalizeText(element.textContent || "");
+        return /^\d{1,3}$/.test(text) && !isLikelyChatTime(element);
+      });
+  }
+
+  function isLikelyChatTime(element) {
+    const text = normalizeText(element.textContent || "");
+    if (/\d{1,2}:\d{2}/.test(text)) return true;
+
+    const label = normalizeText(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""}`).toLowerCase();
+    return /hora|time|data|date/.test(label);
+  }
+
+  function getChatListRowMarker(row) {
+    const title = getChatListRowTitle(row);
+    const unreadText = Array.from(row.querySelectorAll("[aria-label], span, div"))
+      .map((element) => normalizeText(element.getAttribute("aria-label") || element.textContent || ""))
+      .find((text) => /n[aã]o lida|unread|^\d{1,3}$/.test(text.toLowerCase())) || "";
+    const rowText = normalizeText(row.innerText || row.textContent || "");
+
+    return [title, unreadText, rowText].filter(Boolean).join("|");
   }
 
   function startRefresh() {
