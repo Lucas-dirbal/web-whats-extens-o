@@ -1,0 +1,12 @@
+{
+  "name": "whatsapp-suporte-extensao",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extensao Chrome com API local para atendimento compartilhado no WhatsApp Web.",
+  "scripts": {
+    "install:server": "npm install --prefix server",
+    "start": "npm start --prefix server",
+    "status": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"try { Invoke-RestMethod -Uri 'http://localhost:3333/health' | ConvertTo-Json -Compress } catch { Write-Output 'API offline' }\"",
+    "port": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Get-NetTCPConnection -LocalPort 3333 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess\""
+  }
+}

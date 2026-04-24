@@ -19,25 +19,33 @@ Todos os atendentes precisam estar na mesma rede ou conseguir acessar o IP do se
 
 1. Instale o Node.js se ainda não tiver.
 2. Abra o PowerShell nesta pasta.
-3. Entre na pasta da API:
-
-```powershell
-cd server
-```
-
-4. Instale as dependências:
+3. Instale as dependências:
 
 ```powershell
 npm install
 ```
 
-5. Inicie a API:
+4. Inicie a API:
 
 ```powershell
 npm start
 ```
 
 A API vai rodar na porta `3333`.
+
+Também funciona entrar diretamente na pasta `server` e rodar os mesmos comandos por lá.
+
+Se aparecer `EADDRINUSE`, significa que a API ja esta aberta na porta `3333`. Confira com:
+
+```powershell
+npm run status
+```
+
+Para ver qual processo esta usando a porta:
+
+```powershell
+npm run port
+```
 
 ## Descobrir o IP do seu computador
 

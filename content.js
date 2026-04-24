@@ -11,6 +11,7 @@
   let activeState = null;
   let collapsed = false;
   let refreshTimer = null;
+  let headerButtonTimer = null;
 
   const statusLabels = {
     unassigned: "Sem atendente",
@@ -127,6 +128,46 @@
 
     const release = panel.querySelector("#sw-release");
     if (release) release.addEventListener("click", () => updateConversation("unassigned", ""));
+
+    ensureAssignmentButton();
+  }
+
+  function ensureAssignmentButton() {
+    const main = document.querySelector("#main");
+    const header = main?.querySelector("header");
+    if (!header) return;
+
+    let button = document.getElementById("sw-header-assign");
+
+    if (!button) {
+      button = document.createElement("button");
+      button.id = "sw-header-assign";
+      button.type = "button";
+      button.textContent = "atribuir atendimento";
+      button.title = "Atribuir esta conversa ao atendente configurado";
+      button.addEventListener("click", async () => {
+        await refreshActiveChat();
+
+        if (!config.attendantName) {
+          showError("Configure seu nome no popup da extensao.");
+          return;
+        }
+
+        if (!activeChat?.id) {
+          showError("Abra uma conversa antes de atribuir.");
+          return;
+        }
+
+        updateConversation("assigned", config.attendantName);
+      });
+    }
+
+    const actions = header.lastElementChild || header;
+    if (button.parentElement !== actions) {
+      actions.insertBefore(button, actions.firstChild);
+    }
+
+    button.disabled = !config.attendantName || !activeChat?.id;
   }
 
   function canAct() {
@@ -209,8 +250,10 @@
 
   function startRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
+    if (headerButtonTimer) clearInterval(headerButtonTimer);
     refreshActiveChat();
     refreshTimer = setInterval(refreshActiveChat, REFRESH_MS);
+    headerButtonTimer = setInterval(ensureAssignmentButton, 1000);
   }
 
   function escapeHtml(value) {

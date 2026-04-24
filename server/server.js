@@ -62,8 +62,18 @@ app.put("/conversations/:id", (req, res) => {
   res.json(next);
 });
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`API do suporte rodando em http://${HOST}:${PORT}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`A API ja esta rodando ou a porta ${PORT} esta ocupada.`);
+    console.error(`Teste no navegador: http://localhost:${PORT}/health`);
+    process.exit(0);
+  }
+
+  throw error;
 });
 
 function createConversation(id, title) {
