@@ -4,6 +4,7 @@
 
   const DEFAULT_API_URL = "http://localhost:3333";
   const REFRESH_MS = 3000;
+  const PANEL_POSITION_KEY = "sw-panel-position";
 
   let config = { attendantName: "", apiUrl: DEFAULT_API_URL };
   let activeChat = null;
@@ -11,6 +12,12 @@
   let collapsed = false;
   let refreshTimer = null;
   let isSendingMessage = false;
+  let messageDraft = "";
+  let uiError = "";
+  const resolvedIncomingMarkers = new Map();
+  let isDragging = false;
+  let dragOffset = { x: 0, y: 0 };
+  let panelPosition = { top: "auto", right: "16px", bottom: "16px", left: "auto" };
 
   const statusLabels = {
     unassigned: "Sem atendente",
@@ -29,12 +36,20 @@
     "atribuir atendimento"
   ]);
 
+  function formatAttendantMessage(messageLines) {
+    const lines = Array.isArray(messageLines) ? messageLines : [messageLines];
+    return [`*${config.attendantName}:*`, "", ...lines];
+  }
+
   function getWelcomeMessage() {
-    return `Ola, seja bem-vindo(a) a Interface Sistemas Inteligentes. Aqui e ${config.attendantName}; como posso ajudar?`;
+    return formatAttendantMessage("Seja bem-vindo(a) à Interface Sistemas Inteligentes! Estou à disposição para ajudá-lo(a).");
   }
 
   function getClosingMessage() {
-    return "Atendimento concluido. Agradecemos seu contato e a confianca na Interface Sistemas Inteligentes. Sempre que precisar, estamos a disposicao.";
+    return formatAttendantMessage([
+      "Atendimento concluído.",
+      "Agradecemos seu contato e a confiança na Interface Sistemas Inteligentes. Sempre que precisar, estamos à disposição."
+    ]);
   }
 
   function loadConfig() {
@@ -91,7 +106,48 @@
     panel = document.createElement("div");
     panel.id = "sw-panel";
     document.body.appendChild(panel);
+    
+    loadPanelPosition();
+    setupDragListeners(panel);
+    
     return panel;
+  }
+
+  function loadPanelPosition() {
+    try {
+      const saved = localStorage.getItem(PANEL_POSITION_KEY);
+      if (saved) {
+        panelPosition = JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn("Erro ao carregar posição do painel:", e);
+    }
+  }
+
+  function savePanelPosition() {
+    try {
+      localStorage.setItem(PANEL_POSITION_KEY, JSON.stringify(panelPosition));
+    } catch (e) {
+      console.warn("Erro ao salvar posição do painel:", e);
+    }
+  }
+
+  function setupDragListeners(panel) {
+    const header = panel.querySelector(".sw-header");
+    if (!header) return;
+
+    header.style.cursor = "grab";
+
+    header.addEventListener("mousedown", (e) => {
+      if (e.target.tagName === "BUTTON") return;
+      
+      isDragging = true;
+      header.style.cursor = "grabbing";
+      
+      const rect = panel.getBoundingClientRect();
+      dragOffset.x = e.clientX - rect.left;
+      dragOffset.y = e.clientY - rect.top;
+    });
   }
 
   function renderPanel() {
@@ -99,10 +155,11 @@
     const title = activeChat?.title || "Abra uma conversa";
     const state = activeState || { status: "unassigned" };
     const status = state.status || "unassigned";
-    const assignedTo = state.assignedTo || "Ninguem";
+    const assignedTo = state.assignedTo || "Ninguém";
     const hasName = Boolean(config.attendantName);
     const bodyClass = collapsed ? "sw-body sw-hidden" : "sw-body";
     const footerClass = collapsed ? "sw-footer sw-hidden" : "sw-footer";
+    const errorClass = uiError ? "sw-error" : "sw-error sw-hidden";
 
     panel.innerHTML = `
       <div class="sw-header">
@@ -128,15 +185,23 @@
         <div class="sw-actions">
           <button class="primary" id="sw-start" ${!canAct() ? "disabled" : ""}>Iniciar atendimento</button>
           <button id="sw-pending" ${!canAct() ? "disabled" : ""}>Pendente</button>
-          <button id="sw-complete" ${!canAct() ? "disabled" : ""}>Concluido</button>
+          <button id="sw-complete" ${!canAct() ? "disabled" : ""}>Concluído</button>
         </div>
-        <div id="sw-error" class="sw-error sw-hidden"></div>
+        <div class="sw-message-section">
+          <label class="sw-label" for="sw-message">Mensagem</label>
+          <textarea id="sw-message" class="sw-textarea" placeholder="Digite sua mensagem..." ${!canAct() ? "disabled" : ""}>${escapeHtml(messageDraft)}</textarea>
+          <button id="sw-send-message" class="sw-send-btn" ${!canAct() ? "disabled" : ""}>Enviar com atendente</button>
+        </div>
+        <div id="sw-error" class="${errorClass}">${escapeHtml(uiError)}</div>
       </div>
       <div class="${footerClass}">
         <button id="sw-refresh">Atualizar</button>
         <button id="sw-open-popup">Configurar</button>
       </div>
     `;
+
+    // Aplicar posição salva
+    applyPanelPosition(panel);
 
     panel.querySelector("#sw-toggle").addEventListener("click", () => {
       collapsed = !collapsed;
@@ -145,13 +210,27 @@
 
     panel.querySelector("#sw-refresh")?.addEventListener("click", refreshActiveChat);
     panel.querySelector("#sw-open-popup")?.addEventListener("click", () => {
-      showError("Clique no icone da extensao no Chrome para configurar.");
+      showError("Clique no ícone da extensão no Chrome para configurar.");
     });
     panel.querySelector("#sw-start")?.addEventListener("click", startAttendance);
     panel.querySelector("#sw-pending")?.addEventListener("click", () => {
       updateConversation("pending", state.assignedTo || config.attendantName);
     });
     panel.querySelector("#sw-complete")?.addEventListener("click", completeAttendance);
+    panel.querySelector("#sw-send-message")?.addEventListener("click", sendCustomMessage);
+    panel.querySelector("#sw-message")?.addEventListener("input", (event) => {
+      messageDraft = event.target.value;
+    });
+
+    setupDragListeners(panel);
+  }
+
+  function applyPanelPosition(panel) {
+    panel.style.position = "fixed";
+    panel.style.top = panelPosition.top;
+    panel.style.right = panelPosition.right;
+    panel.style.bottom = panelPosition.bottom;
+    panel.style.left = panelPosition.left;
   }
 
   function canAct() {
@@ -159,6 +238,7 @@
   }
 
   function showError(message) {
+    uiError = message;
     const error = document.getElementById("sw-error");
     if (!error) return;
     error.textContent = message;
@@ -166,6 +246,7 @@
   }
 
   function clearError() {
+    uiError = "";
     const error = document.getElementById("sw-error");
     if (!error) return;
     error.textContent = "";
@@ -193,23 +274,32 @@
     const id = getChatId(title);
 
     if (!id) {
+      const hadActiveChat = Boolean(activeChat || activeState || uiError);
       activeChat = null;
       activeState = null;
-      renderPanel();
+      clearError();
+      if (hadActiveChat) renderPanel();
       return;
     }
 
+    let shouldRender = activeChat?.id !== id || activeChat?.title !== title;
+    const previousState = JSON.stringify(activeState);
+    const previousError = uiError;
     activeChat = { id, title };
 
     try {
       clearError();
-      activeState = await api(`/conversations/${encodeURIComponent(id)}?title=${encodeURIComponent(title)}`);
+      const nextState = await api(`/conversations/${encodeURIComponent(id)}?title=${encodeURIComponent(title)}`);
+      shouldRender = shouldRender || previousState !== JSON.stringify(nextState) || Boolean(previousError);
+      activeState = nextState;
+      shouldRender = (await moveResolvedChatToPendingOnIncomingMessage()) || shouldRender;
     } catch (error) {
       activeState = { status: "unassigned" };
-      showError(`Nao consegui conectar na API: ${config.apiUrl}`);
+      showError(`Não consegui conectar na API: ${config.apiUrl}`);
+      shouldRender = true;
     }
 
-    renderPanel();
+    if (shouldRender) renderPanel();
   }
 
   async function updateConversation(status, assignedTo) {
@@ -223,12 +313,61 @@
           title: activeChat.title,
           status,
           assignedTo,
-          updatedBy: config.attendantName
+          updatedBy: config.attendantName,
+          lastIncomingMarker: status === "resolved" ? getLatestIncomingMessageMarker() : activeState?.lastIncomingMarker
         }
       });
+      rememberResolvedIncomingMarker(status);
       renderPanel();
     } catch (error) {
-      showError(`Nao foi possivel salvar na API: ${config.apiUrl}`);
+      showError(`Não foi possível salvar na API: ${config.apiUrl}`);
+    }
+  }
+
+  async function moveResolvedChatToPendingOnIncomingMessage() {
+    if (!activeChat?.id || activeState?.status !== "resolved") {
+      return false;
+    }
+
+    const currentMarker = getLatestIncomingMessageMarker();
+    if (!currentMarker) return false;
+
+    const previousMarker = resolvedIncomingMarkers.get(activeChat.id) || activeState.lastIncomingMarker;
+    if (!previousMarker) {
+      resolvedIncomingMarkers.set(activeChat.id, currentMarker);
+      return false;
+    }
+
+    if (previousMarker === currentMarker) {
+      return false;
+    }
+
+    resolvedIncomingMarkers.set(activeChat.id, currentMarker);
+    activeState = await api(`/conversations/${encodeURIComponent(activeChat.id)}`, {
+      method: "PUT",
+      body: {
+        title: activeChat.title,
+        status: "pending",
+        assignedTo: "",
+        updatedBy: config.attendantName || "cliente",
+        lastIncomingMarker: currentMarker
+      }
+    });
+
+    return true;
+  }
+
+  function rememberResolvedIncomingMarker(status) {
+    if (!activeChat?.id) return;
+
+    if (status !== "resolved") {
+      resolvedIncomingMarkers.delete(activeChat.id);
+      return;
+    }
+
+    const marker = getLatestIncomingMessageMarker();
+    if (marker) {
+      resolvedIncomingMarkers.set(activeChat.id, marker);
     }
   }
 
@@ -238,16 +377,35 @@
     await runSendingAction(async () => {
       await sendWhatsAppMessage(getWelcomeMessage());
       await updateConversation("assigned", config.attendantName);
-    }, "Nao consegui iniciar o atendimento.");
+    }, "Não consegui iniciar o atendimento.");
   }
 
   async function completeAttendance() {
     if (!canAct()) return;
 
     await runSendingAction(async () => {
-      await updateConversation("unassigned", "");
       await sendWhatsAppMessage(getClosingMessage());
-    }, "Nao consegui concluir o atendimento.");
+      await updateConversation("resolved", config.attendantName);
+    }, "Não consegui concluir o atendimento.");
+  }
+
+  async function sendCustomMessage() {
+    if (!canAct()) return;
+
+    const textarea = document.getElementById("sw-message");
+    if (!textarea) return;
+
+    const userMessage = textarea.value.trim();
+    if (!userMessage) {
+      showError("Digite uma mensagem antes de enviar.");
+      return;
+    }
+
+    await runSendingAction(async () => {
+      const fullMessage = formatAttendantMessage(userMessage.split(/\r?\n/));
+      await sendWhatsAppMessage(fullMessage);
+      messageDraft = "";
+    }, "Não consegui enviar a mensagem.");
   }
 
   async function runSendingAction(action, fallbackMessage) {
@@ -265,23 +423,23 @@
   }
 
   async function sendWhatsAppMessage(message) {
-    const cleanMessage = normalizeOutgoingMessage(message);
+    const messageLines = normalizeOutgoingMessageLines(message);
     const input = findMessageInput();
 
     if (!input) {
-      throw new Error("Nao encontrei o campo de mensagem do WhatsApp.");
+      throw new Error("Não encontrei o campo de mensagem do WhatsApp.");
     }
 
     clearMessageInput(input);
     await wait(120);
-    insertMessageText(input, cleanMessage);
+    await insertMessageText(input, messageLines);
     await wait(350);
-    dedupeDraft(input, cleanMessage);
+    await fixDuplicatedDraft(input, messageLines);
     await wait(150);
 
     const sendButton = findSendButton();
     if (!sendButton) {
-      throw new Error("Nao encontrei o botao de enviar do WhatsApp.");
+      throw new Error("Não encontrei o botão de enviar do WhatsApp.");
     }
 
     sendButton.click();
@@ -302,20 +460,90 @@
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
   }
 
-  function insertMessageText(input, message) {
+  async function insertMessageText(input, lines) {
     input.focus();
-    document.execCommand("insertText", false, message);
-    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: message }));
+    const message = lines.join("\n");
+
+    if (pasteMessageText(input, message)) {
+      await wait(120);
+      if (draftMatchesMessage(input, message)) return;
+      clearMessageInput(input);
+    }
+
+    setMessageText(input, lines);
   }
 
-  function dedupeDraft(input, message) {
-    const currentText = normalizeOutgoingMessage(input.textContent || "");
-    const doubled = `${message}${message}`;
+  function pasteMessageText(input, message) {
+    try {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", message);
 
-    if (!currentText.includes(doubled)) return;
+      const pasteEvent = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData
+      });
+
+      input.dispatchEvent(pasteEvent);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function setMessageText(input, lines) {
+    input.focus();
+    input.textContent = "";
+
+    lines.forEach((line, index) => {
+      if (index > 0) {
+        input.appendChild(document.createElement("br"));
+      }
+
+      input.appendChild(document.createTextNode(line));
+    });
+
+    placeCaretAtEnd(input);
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: lines.join("\n") }));
+  }
+
+  async function fixDuplicatedDraft(input, messageLines) {
+    const message = messageLines.join("\n");
+    const currentText = normalizeOutgoingMessage(getDraftText(input));
+
+    if (!isDuplicatedDraft(currentText, message)) return;
 
     clearMessageInput(input);
-    insertMessageText(input, message);
+    await insertMessageText(input, messageLines);
+  }
+
+  function draftMatchesMessage(input, message) {
+    const draftText = normalizeOutgoingMessage(getDraftText(input));
+    return draftText === normalizeOutgoingMessage(message);
+  }
+
+  function getDraftText(input) {
+    return input.innerText || input.textContent || "";
+  }
+
+  function placeCaretAtEnd(element) {
+    const range = document.createRange();
+    const selection = window.getSelection();
+
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function isDuplicatedDraft(currentText, message) {
+    if (currentText === message) return false;
+    if (currentText === `${message}${message}`) return true;
+    if (currentText === `${message}\n${message}`) return true;
+    if (!currentText.endsWith(message)) return false;
+
+    const firstCopy = currentText.slice(0, -message.length).trim();
+    return firstCopy === message || message.endsWith(firstCopy);
   }
 
   function findMessageInput() {
@@ -346,6 +574,34 @@
     return buttons[buttons.length - 1] || null;
   }
 
+  function getLatestIncomingMessageMarker() {
+    const main = document.querySelector("#main");
+    if (!main) return "";
+
+    const incomingMessages = Array.from(main.querySelectorAll(".message-in")).filter(isVisible);
+    const latestMessage = incomingMessages[incomingMessages.length - 1];
+    if (!latestMessage) return "";
+
+    const idElement = latestMessage.matches("[data-id]")
+      ? latestMessage
+      : latestMessage.querySelector("[data-id]");
+    const messageId = idElement?.getAttribute("data-id") || "";
+    const messageText = normalizeText(latestMessage.innerText || latestMessage.textContent || "");
+    const messageTime = getMessageTime(latestMessage);
+
+    return [messageId, messageText, messageTime].filter(Boolean).join("|");
+  }
+
+  function getMessageTime(messageElement) {
+    const timeElement = messageElement.querySelector("[data-pre-plain-text], .copyable-text");
+    const plainText = timeElement?.getAttribute("data-pre-plain-text") || "";
+    if (plainText) return plainText;
+
+    const visibleText = messageElement.innerText || "";
+    const match = visibleText.match(/\b\d{1,2}:\d{2}\b/);
+    return match ? match[0] : "";
+  }
+
   function startRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshActiveChat();
@@ -369,8 +625,22 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  function normalizeOutgoingMessageLines(value) {
+    const rawLines = Array.isArray(value) ? value : String(value || "").split(/\r?\n/);
+
+    return rawLines.map((line) => {
+      return String(line || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
+    });
+  }
+
   function normalizeOutgoingMessage(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
+    return String(value || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\u00a0/g, " ")
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+/g, " ").trim())
+      .join("\n")
+      .trim();
   }
 
   function isVisible(element) {
@@ -381,6 +651,38 @@
   function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  // Listeners de drag
+  document.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+
+    const panel = document.getElementById("sw-panel");
+    if (!panel) return;
+
+    const newX = e.clientX - dragOffset.x;
+    const newY = e.clientY - dragOffset.y;
+
+    panel.style.left = `${newX}px`;
+    panel.style.top = `${newY}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+
+    panelPosition = {
+      top: `${newY}px`,
+      left: `${newX}px`,
+      right: "auto",
+      bottom: "auto"
+    };
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (isDragging) {
+      isDragging = false;
+      const header = document.querySelector("#sw-panel .sw-header");
+      if (header) header.style.cursor = "grab";
+      savePanelPosition();
+    }
+  });
 
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.attendantName || changes.apiUrl) {
