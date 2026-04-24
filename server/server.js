@@ -1,4 +1,5 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const express = require("express");
 const cors = require("cors");
@@ -63,7 +64,10 @@ app.put("/conversations/:id", (req, res) => {
 });
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`API do suporte rodando em http://${HOST}:${PORT}`);
+  console.log(`API do suporte rodando em http://localhost:${PORT}`);
+  getLanAddresses().forEach((address) => {
+    console.log(`Para outros computadores: http://${address}:${PORT}`);
+  });
 });
 
 server.on("error", (error) => {
@@ -106,9 +110,17 @@ function ensureDataFile() {
 }
 
 function readData() {
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  const content = fs.readFileSync(DATA_FILE, "utf8").replace(/^\uFEFF/, "");
+  return JSON.parse(content);
 }
 
 function writeData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+function getLanAddresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter((item) => item && item.family === "IPv4" && !item.internal)
+    .map((item) => item.address);
 }

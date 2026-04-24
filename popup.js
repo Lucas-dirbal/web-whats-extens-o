@@ -40,7 +40,8 @@ save.addEventListener("click", () => {
 refresh.addEventListener("click", loadConversations);
 
 function normalizeApiUrl(value) {
-  return value.replace(/\/+$/, "");
+  const normalized = value.replace(/\/+$/, "");
+  return normalized.replace("://0.0.0.0:", "://localhost:");
 }
 
 async function loadConversations() {
