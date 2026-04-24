@@ -54,3 +54,89 @@ button:hover {
   font-size: 12px;
   color: #0b6b4f;
 }
+
+.summary {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e5eaf0;
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+#refresh {
+  width: auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #c7d1db;
+  color: #1f2933;
+  background: #f8fafc;
+}
+
+.conversation-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.conversation {
+  padding: 8px;
+  border: 1px solid #d6dde5;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.conversation-title {
+  margin: 0 0 5px;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.conversation-meta {
+  margin: 0;
+  font-size: 11px;
+  color: #52616f;
+}
+
+.badge {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: #eef2f7;
+  color: #334e68;
+}
+
+.badge.pending {
+  background: #fff7db;
+  color: #8a5d00;
+}
+
+.badge.assigned {
+  background: #dff8ed;
+  color: #0b6b4f;
+}
+
+.badge.resolved {
+  background: #e5edf8;
+  color: #244c80;
+}
+
+.empty {
+  margin: 0;
+  color: #52616f;
+  font-size: 12px;
+}
