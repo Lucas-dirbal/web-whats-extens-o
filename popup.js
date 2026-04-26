@@ -1,7 +1,18 @@
-const DEFAULT_API_URL = "http://localhost:3333";
+const DEFAULT_API_URL = "https://whatsapp-suporte-api.vercel.app";
+const DEFAULT_FEEDBACK_URL = "https://avaliacao-de-atendimento.vercel.app";
+const ATTENDANTS = ["Lucas", "Nicolas", "Leandro", "Pedro", "Willian"];
+const LEGACY_API_URLS = new Set([
+  "http://localhost:3333",
+  "http://127.0.0.1:3333"
+]);
+const LEGACY_FEEDBACK_URLS = new Set([
+  "http://127.0.0.1:3000",
+  "http://localhost:3000"
+]);
 
 const attendantName = document.getElementById("attendantName");
 const apiUrl = document.getElementById("apiUrl");
+const feedbackUrl = document.getElementById("feedbackUrl");
 const save = document.getElementById("save");
 const status = document.getElementById("status");
 const refresh = document.getElementById("refresh");
@@ -17,24 +28,45 @@ const statusLabels = {
   resolved: "Resolvida"
 };
 
-chrome.storage.sync.get(["attendantName", "apiUrl"], (items) => {
-  attendantName.value = items.attendantName || "";
-  apiUrl.value = items.apiUrl || DEFAULT_API_URL;
+renderAttendantOptions();
+
+chrome.storage.sync.get(["attendantName", "apiUrl", "feedbackUrl"], (items) => {
+  const nextApiUrl = normalizeStoredUrl(items.apiUrl, DEFAULT_API_URL, LEGACY_API_URLS);
+  const nextFeedbackUrl = normalizeStoredUrl(items.feedbackUrl, DEFAULT_FEEDBACK_URL, LEGACY_FEEDBACK_URLS);
+  const nextAttendantName = normalizeAttendantName(items.attendantName);
+
+  attendantName.value = nextAttendantName;
+  apiUrl.value = nextApiUrl;
+  feedbackUrl.value = nextFeedbackUrl;
+
+  if (
+    items.attendantName !== nextAttendantName ||
+    items.apiUrl !== nextApiUrl ||
+    items.feedbackUrl !== nextFeedbackUrl
+  ) {
+    chrome.storage.sync.set({
+      attendantName: nextAttendantName,
+      apiUrl: nextApiUrl,
+      feedbackUrl: nextFeedbackUrl
+    });
+  }
+
   loadConversations();
 });
 
 save.addEventListener("click", () => {
-  const name = attendantName.value.trim();
+  const name = normalizeAttendantName(attendantName.value);
   const url = normalizeApiUrl(apiUrl.value.trim() || DEFAULT_API_URL);
+  const siteUrl = normalizeFeedbackUrl(feedbackUrl.value.trim() || DEFAULT_FEEDBACK_URL);
 
   if (!name) {
-    status.textContent = "Informe o nome do atendente.";
+    status.textContent = "Selecione o atendente.";
     status.style.color = "#b42318";
     return;
   }
 
-  chrome.storage.sync.set({ attendantName: name, apiUrl: url }, () => {
-    status.textContent = "Configuração salva.";
+  chrome.storage.sync.set({ attendantName: name, apiUrl: url, feedbackUrl: siteUrl }, () => {
+    status.textContent = "Configuracao salva.";
     status.style.color = "#0b6b4f";
     loadConversations();
   });
@@ -49,17 +81,42 @@ filterButtons.forEach((button) => {
   });
 });
 
-function normalizeApiUrl(value) {
-  const normalized = value.replace(/\/+$/, "");
+function renderAttendantOptions() {
+  attendantName.innerHTML = [
+    '<option value="">Selecione um atendente</option>',
+    ...ATTENDANTS.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+  ].join("");
+}
+
+function normalizeUrl(value, fallbackUrl) {
+  const normalized = String(value || fallbackUrl).trim().replace(/\/+$/, "");
   return normalized.replace("://0.0.0.0:", "://localhost:");
+}
+
+function normalizeAttendantName(value) {
+  const normalized = String(value || "").trim();
+  return ATTENDANTS.includes(normalized) ? normalized : "";
+}
+
+function normalizeApiUrl(value) {
+  return normalizeUrl(value, DEFAULT_API_URL);
+}
+
+function normalizeFeedbackUrl(value) {
+  return normalizeUrl(value, DEFAULT_FEEDBACK_URL);
+}
+
+function normalizeStoredUrl(value, fallbackUrl, legacyUrls) {
+  const normalized = normalizeUrl(value || fallbackUrl, fallbackUrl);
+  return legacyUrls.has(normalized) ? fallbackUrl : normalized;
 }
 
 async function loadConversations() {
   const url = normalizeApiUrl(apiUrl.value.trim() || DEFAULT_API_URL);
 
   try {
-    const response = await fetch(`${url}/conversations`).catch(e => {
-      throw new Error("Não foi possível conectar à API. Verifique se o servidor está rodando.");
+    const response = await fetch(`${url}/conversations`).catch(() => {
+      throw new Error("Nao foi possivel conectar a API. Verifique a URL configurada.");
     });
 
     if (!response.ok) {
@@ -86,7 +143,7 @@ function renderConversations(conversations) {
     .slice(0, 20)
     .map((conversation) => {
       const status = conversation.status || "unassigned";
-      const assignedTo = conversation.assignedTo || "Ninguém";
+      const assignedTo = conversation.assignedTo || "Ninguem";
 
       return `
         <article class="conversation">

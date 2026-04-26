@@ -23,7 +23,8 @@ label {
   color: #52616f;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 36px;
   margin-top: 5px;
@@ -31,6 +32,8 @@ input {
   border: 1px solid #c7d1db;
   border-radius: 6px;
   font-size: 13px;
+  color: #1f2933;
+  background: #ffffff;
 }
 
 button {

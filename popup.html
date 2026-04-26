@@ -11,11 +11,17 @@
       <h1>Suporte WhatsApp</h1>
       <label>
         Nome do atendente
-        <input id="attendantName" type="text" placeholder="Ex: Maria">
+        <select id="attendantName">
+          <option value="">Selecione um atendente</option>
+        </select>
       </label>
       <label>
-        Endereço da API
-        <input id="apiUrl" type="url" placeholder="http://192.168.0.10:3333">
+        Endereco da API
+        <input id="apiUrl" type="url" placeholder="https://whatsapp-suporte-api.vercel.app">
+      </label>
+      <label>
+        Endereco do site de avaliacao
+        <input id="feedbackUrl" type="url" placeholder="https://avaliacao-de-atendimento.vercel.app">
       </label>
       <button id="save">Salvar</button>
       <p id="status" role="status"></p>

@@ -164,58 +164,6 @@
   background: #912018;
 }
 
-.sw-message-section {
-  margin-bottom: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #e5eaf0;
-}
-
-.sw-textarea {
-  width: 100%;
-  min-height: 80px;
-  padding: 8px;
-  border: 1px solid #c7d1db;
-  border-radius: 6px;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 12px;
-  resize: vertical;
-  margin-bottom: 8px;
-}
-
-.sw-textarea:focus {
-  outline: none;
-  border-color: #0f766e;
-  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.1);
-}
-
-.sw-textarea:disabled {
-  background: #f8fafc;
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.sw-send-btn {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid #0f766e;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  background: #0f766e;
-  color: #ffffff;
-  transition: background-color 0.2s;
-}
-
-.sw-send-btn:hover:not(:disabled) {
-  background: #115e59;
-}
-
-.sw-send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .sw-footer {
   display: flex;
   justify-content: space-between;

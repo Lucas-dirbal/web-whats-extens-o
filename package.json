@@ -2,7 +2,7 @@
   "name": "whatsapp-suporte-extensao",
   "version": "1.0.0",
   "private": true,
-  "description": "Extensão Chrome com API local para atendimento compartilhado no WhatsApp Web.",
+  "description": "Extensao Chrome com API compartilhada para atendimento no WhatsApp Web.",
   "scripts": {
     "install:server": "npm install --prefix server",
     "start": "npm start --prefix server",

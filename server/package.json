@@ -2,12 +2,13 @@
   "name": "whatsapp-suporte-api",
   "version": "1.0.0",
   "private": true,
-  "description": "API local para sincronizar atribuições de atendimento do WhatsApp Web.",
+  "description": "API para sincronizar atribuicoes de atendimento do WhatsApp Web localmente ou na Vercel.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "@vercel/blob": "^2.3.3",
     "cors": "^2.8.5",
     "express": "^4.18.3"
   }

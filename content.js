@@ -2,17 +2,28 @@
   if (window.__swSupportExtensionLoaded) return;
   window.__swSupportExtensionLoaded = true;
 
-  const DEFAULT_API_URL = "http://localhost:3333";
+  const DEFAULT_API_URL = "https://whatsapp-suporte-api.vercel.app";
+  const DEFAULT_FEEDBACK_URL = "https://avaliacao-de-atendimento.vercel.app";
+  const ATTENDANTS = ["Lucas", "Nicolas", "Leandro", "Pedro", "Willian"];
+  const LEGACY_API_URLS = new Set([
+    "http://localhost:3333",
+    "http://127.0.0.1:3333"
+  ]);
+  const LEGACY_FEEDBACK_URLS = new Set([
+    "http://127.0.0.1:3000",
+    "http://localhost:3000"
+  ]);
   const REFRESH_MS = 3000;
   const PANEL_POSITION_KEY = "sw-panel-position";
 
-  let config = { attendantName: "", apiUrl: DEFAULT_API_URL };
+  let config = { attendantName: "", apiUrl: DEFAULT_API_URL, feedbackUrl: DEFAULT_FEEDBACK_URL };
   let activeChat = null;
   let activeState = null;
   let collapsed = false;
   let refreshTimer = null;
   let isSendingMessage = false;
-  let messageDraft = "";
+  let isInjectingAttendantHeader = false;
+  let isProgrammaticSend = false;
   let uiError = "";
   const resolvedIncomingMarkers = new Map();
   let isDragging = false;
@@ -41,14 +52,21 @@
     return [`*${config.attendantName}:*`, "", ...lines];
   }
 
+  function getAttendantHeaderLine() {
+    return `*${config.attendantName}:*`;
+  }
+
   function getWelcomeMessage() {
     return formatAttendantMessage("Seja bem-vindo(a) à Interface Sistemas Inteligentes! Estou à disposição para ajudá-lo(a).");
   }
 
-  function getClosingMessage() {
+  function getClosingMessage(feedbackLink) {
     return formatAttendantMessage([
-      "Atendimento concluído.",
-      "Agradecemos seu contato e a confiança na Interface Sistemas Inteligentes. Sempre que precisar, estamos à disposição."
+      "Atendimento concluido.",
+      "Agradecemos seu contato e a confianca na Interface Sistemas Inteligentes. Sempre que precisar, estamos a disposicao.",
+      "",
+      "Avalie este atendimento pelo link unico abaixo:",
+      feedbackLink
     ]);
   }
 
@@ -57,14 +75,30 @@
   }
 
   function loadConfig() {
-    chrome.storage.sync.get(["attendantName", "apiUrl"], (items) => {
+    chrome.storage.sync.get(["attendantName", "apiUrl", "feedbackUrl"], (items) => {
+      const nextApiUrl = normalizeStoredUrl(items.apiUrl, DEFAULT_API_URL, LEGACY_API_URLS);
+      const nextFeedbackUrl = normalizeStoredUrl(
+        items.feedbackUrl,
+        DEFAULT_FEEDBACK_URL,
+        LEGACY_FEEDBACK_URLS
+      );
+
       config = {
-        attendantName: items.attendantName || "",
-        apiUrl: normalizeApiUrl(items.apiUrl || DEFAULT_API_URL)
+        attendantName: normalizeAttendantName(items.attendantName),
+        apiUrl: nextApiUrl,
+        feedbackUrl: nextFeedbackUrl
       };
 
-      if (items.apiUrl !== config.apiUrl) {
-        chrome.storage.sync.set({ apiUrl: config.apiUrl });
+      if (
+        items.attendantName !== config.attendantName ||
+        items.apiUrl !== config.apiUrl ||
+        items.feedbackUrl !== config.feedbackUrl
+      ) {
+        chrome.storage.sync.set({
+          attendantName: config.attendantName,
+          apiUrl: config.apiUrl,
+          feedbackUrl: config.feedbackUrl
+        });
       }
 
       renderPanel();
@@ -72,9 +106,27 @@
     });
   }
 
-  function normalizeApiUrl(url) {
-    const normalized = String(url || DEFAULT_API_URL).replace(/\/+$/, "");
+  function normalizeUrl(url, fallbackUrl) {
+    const normalized = String(url || fallbackUrl).trim().replace(/\/+$/, "");
     return normalized.replace("://0.0.0.0:", "://localhost:");
+  }
+
+  function normalizeApiUrl(url) {
+    return normalizeUrl(url, DEFAULT_API_URL);
+  }
+
+  function normalizeFeedbackUrl(url) {
+    return normalizeUrl(url, DEFAULT_FEEDBACK_URL);
+  }
+
+  function normalizeAttendantName(name) {
+    const normalized = String(name || "").trim();
+    return ATTENDANTS.includes(normalized) ? normalized : "";
+  }
+
+  function normalizeStoredUrl(url, fallbackUrl, legacyUrls) {
+    const normalized = normalizeUrl(url || fallbackUrl, fallbackUrl);
+    return legacyUrls.has(normalized) ? fallbackUrl : normalized;
   }
 
   function getChatTitle() {
@@ -112,7 +164,7 @@
     document.body.appendChild(panel);
     
     loadPanelPosition();
-    setupDragListeners(panel);
+    // setupDragListeners is called after innerHTML is set in renderPanel
     
     return panel;
   }
@@ -169,7 +221,7 @@
       <div class="sw-header">
         <div>
           <p class="sw-title">Suporte WhatsApp</p>
-          <p class="sw-small">${escapeHtml(hasName ? config.attendantName : "Configure seu nome no popup")}</p>
+          <p class="sw-small">${escapeHtml(hasName ? config.attendantName : "Selecione seu nome no popup")}</p>
         </div>
         <button id="sw-toggle" title="Minimizar painel">${collapsed ? "Abrir" : "Fechar"}</button>
       </div>
@@ -193,11 +245,6 @@
           <button class="danger" id="sw-finish" ${!canAct() ? "disabled" : ""}>Finalizar atendimento</button>
           <button class="danger" id="sw-finish-inactivity" ${!canAct() ? "disabled" : ""}>Finalizar por Inatividade</button>
         </div>
-        <div class="sw-message-section">
-          <label class="sw-label" for="sw-message">Mensagem</label>
-          <textarea id="sw-message" class="sw-textarea" placeholder="Digite sua mensagem..." ${!canAct() ? "disabled" : ""}>${escapeHtml(messageDraft)}</textarea>
-          <button id="sw-send-message" class="sw-send-btn" ${!canAct() ? "disabled" : ""}>Enviar com atendente</button>
-        </div>
         <div id="sw-error" class="${errorClass}">${escapeHtml(uiError)}</div>
       </div>
       <div class="${footerClass}">
@@ -208,6 +255,9 @@
 
     // Aplicar posição salva
     applyPanelPosition(panel);
+
+    // Setup drag now that .sw-header exists in DOM
+    setupDragListeners(panel);
 
     panel.querySelector("#sw-toggle").addEventListener("click", () => {
       collapsed = !collapsed;
@@ -223,12 +273,6 @@
     panel.querySelector("#sw-complete")?.addEventListener("click", resolveAttendance);
     panel.querySelector("#sw-finish")?.addEventListener("click", finishAttendance);
     panel.querySelector("#sw-finish-inactivity")?.addEventListener("click", finishAttendanceByInactivity);
-    panel.querySelector("#sw-send-message")?.addEventListener("click", sendCustomMessage);
-    panel.querySelector("#sw-message")?.addEventListener("input", (event) => {
-      messageDraft = event.target.value;
-    });
-
-    setupDragListeners(panel);
   }
 
   function applyPanelPosition(panel) {
@@ -259,10 +303,10 @@
     error.classList.add("sw-hidden");
   }
 
-  async function api(path, options = {}) {
+  async function requestJson(baseUrl, path, options = {}) {
     const response = await chrome.runtime.sendMessage({
       type: "api",
-      apiUrl: config.apiUrl,
+      apiUrl: baseUrl,
       path,
       method: options.method || "GET",
       body: options.body ? (typeof options.body === "string" ? JSON.parse(options.body) : options.body) : undefined
@@ -273,6 +317,31 @@
     }
 
     return response.data;
+  }
+
+  async function api(path, options = {}) {
+    return requestJson(config.apiUrl, path, options);
+  }
+
+  async function createFeedbackLink() {
+    if (!config.feedbackUrl) {
+      throw new Error("Configure a URL do site de avaliacao no popup da extensao.");
+    }
+
+    const response = await requestJson(config.feedbackUrl, "/api/feedback-links", {
+      method: "POST",
+      body: {
+        attendant: config.attendantName,
+        conversationId: activeChat?.id || "",
+        conversationTitle: activeChat?.title || ""
+      }
+    });
+
+    if (!response?.url) {
+      throw new Error("A API de avaliacao nao retornou um link valido.");
+    }
+
+    return response.url;
   }
 
   async function refreshActiveChat() {
@@ -447,7 +516,8 @@
     if (!canAct()) return;
 
     await runSendingAction(async () => {
-      await sendWhatsAppMessage(getClosingMessage());
+      const feedbackLink = await createFeedbackLink();
+      await sendWhatsAppMessage(getClosingMessage(feedbackLink));
       await updateConversation("resolved", config.attendantName);
     }, "Não consegui concluir o atendimento.");
   }
@@ -476,7 +546,6 @@
     await runSendingAction(async () => {
       const fullMessage = formatAttendantMessage(userMessage.split(/\r?\n/));
       await sendWhatsAppMessage(fullMessage);
-      messageDraft = "";
     }, "Não consegui enviar a mensagem.");
   }
 
@@ -502,44 +571,82 @@
       throw new Error("Não encontrei o campo de mensagem do WhatsApp.");
     }
 
-    clearMessageInput(input);
-    await wait(120);
-    await insertMessageText(input, messageLines);
-    await wait(350);
-    await fixDuplicatedDraft(input, messageLines);
-    await wait(150);
+    await replaceDraftMessage(input, messageLines);
 
-    const sendButton = findSendButton();
+    const sendButton = await waitForSendButton();
     if (!sendButton) {
       throw new Error("Não encontrei o botão de enviar do WhatsApp.");
     }
 
-    sendButton.click();
-    await wait(300);
+    await clickWhatsAppSendButton(sendButton);
+  }
+
+  async function replaceDraftMessage(input, messageLines, options = {}) {
+    const { preferPaste = true } = options;
+    const message = messageLines.join("\n");
+
+    clearMessageInput(input);
+    await waitForDraftClear(input, 350);
+    await insertMessageText(input, messageLines, { preferPaste });
+    if (await waitForDraftMatch(input, message, 500)) return;
+    await fixDuplicatedDraft(input, messageLines, { preferPaste });
+    if (await waitForDraftMatch(input, message, 500)) return;
+
+    clearMessageInput(input);
+    await waitForDraftClear(input, 350);
+    setMessageText(input, messageLines);
+
+    if (!await waitForDraftMatch(input, message, 600)) {
+      throw new Error("Nao consegui preparar a mensagem corretamente no campo do WhatsApp.");
+    }
+  }
+
+  async function clickWhatsAppSendButton(sendButton) {
+    isProgrammaticSend = true;
+
+    try {
+      sendButton.click();
+      await wait(350); // Give React enough time to process and fire the send
+    } finally {
+      isProgrammaticSend = false;
+    }
   }
 
   function clearMessageInput(input) {
     input.focus();
+    selectMessageInputContents(input);
 
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(input);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    // Avoid wiping innerHTML directly — it destroys React's internal fiber nodes
+    // and causes the field to become unresponsive to sends afterwards.
+    // Use execCommand which respects React's synthetic event system.
+    const deleted = document.execCommand("delete", false, null);
+    if (!deleted) {
+      document.execCommand("selectAll", false, null);
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    }
 
-    document.execCommand("delete", false, null);
-    input.innerHTML = "";
-    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    // If text still remains, force-clear via insertText with empty string
+    if (normalizeOutgoingMessage(getDraftText(input))) {
+      document.execCommand("insertText", false, "");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    }
   }
 
-  async function insertMessageText(input, lines) {
+  async function insertMessageText(input, lines, options = {}) {
+    const { preferPaste = true } = options;
     input.focus();
     const message = lines.join("\n");
 
-    if (pasteMessageText(input, message)) {
-      await wait(120);
-      if (draftMatchesMessage(input, message)) return;
+    if (preferPaste && pasteMessageText(input, message)) {
+      if (await waitForDraftMatch(input, message, 400)) return;
       clearMessageInput(input);
+      await waitForDraftClear(input, 300);
+    }
+
+    if (insertTextViaExecCommand(input, message)) {
+      if (await waitForDraftMatch(input, message, 400)) return;
+      clearMessageInput(input);
+      await waitForDraftClear(input, 300);
     }
 
     setMessageText(input, lines);
@@ -547,6 +654,8 @@
 
   function pasteMessageText(input, message) {
     try {
+      selectMessageInputContents(input);
+
       const clipboardData = new DataTransfer();
       clipboardData.setData("text/plain", message);
 
@@ -563,35 +672,102 @@
     }
   }
 
+  function insertTextViaExecCommand(input, message) {
+    try {
+      input.focus();
+      selectMessageInputContents(input);
+      return document.execCommand("insertText", false, message);
+    } catch (error) {
+      return false;
+    }
+  }
+
   function setMessageText(input, lines) {
     input.focus();
-    input.textContent = "";
 
-    lines.forEach((line, index) => {
-      if (index > 0) {
-        input.appendChild(document.createElement("br"));
-      }
+    // Do NOT use input.textContent = "" — it destroys React's virtual DOM fiber
+    // nodes attached to the element, causing the field to silently ignore sends.
+    // Instead, select-all and insertText to replace content through React's path.
+    selectMessageInputContents(input);
+    document.execCommand("insertText", false, lines.join("\n"));
 
-      input.appendChild(document.createTextNode(line));
-    });
+    // If execCommand didn't work (some Chromium builds), fall back to DOM mutation
+    // but dispatch a proper React-compatible input event afterwards.
+    if (!normalizeOutgoingMessage(getDraftText(input))) {
+      input.innerHTML = "";
+      lines.forEach((line, index) => {
+        if (index > 0) input.appendChild(document.createElement("br"));
+        input.appendChild(document.createTextNode(line));
+      });
+      placeCaretAtEnd(input);
+    }
 
-    placeCaretAtEnd(input);
     input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: lines.join("\n") }));
   }
 
-  async function fixDuplicatedDraft(input, messageLines) {
+  async function fixDuplicatedDraft(input, messageLines, options = {}) {
+    const { preferPaste = true } = options;
     const message = messageLines.join("\n");
     const currentText = normalizeOutgoingMessage(getDraftText(input));
 
     if (!isDuplicatedDraft(currentText, message)) return;
 
     clearMessageInput(input);
-    await insertMessageText(input, messageLines);
+    await insertMessageText(input, messageLines, { preferPaste });
   }
 
   function draftMatchesMessage(input, message) {
-    const draftText = normalizeOutgoingMessage(getDraftText(input));
-    return draftText === normalizeOutgoingMessage(message);
+    return areEquivalentOutgoingMessages(getDraftText(input), message);
+  }
+
+  function areEquivalentOutgoingMessages(left, right) {
+    const normalizedLeft = normalizeOutgoingMessage(left);
+    const normalizedRight = normalizeOutgoingMessage(right);
+
+    if (normalizedLeft === normalizedRight) return true;
+
+    // WhatsApp may convert empty lines to \u00a0 or drop them entirely.
+    // Compare ignoring blank/whitespace-only lines as a fallback.
+    const stripBlanks = (s) => s.split("\n").filter((l) => l.trim()).join("\n");
+    if (stripBlanks(normalizedLeft) === stripBlanks(normalizedRight)) return true;
+
+    return normalizeOutgoingMessageForMatch(normalizedLeft) === normalizeOutgoingMessageForMatch(normalizedRight);
+  }
+
+  function normalizeOutgoingMessageForMatch(value) {
+    const normalized = normalizeOutgoingMessage(value);
+    if (!normalized) return "";
+
+    const lines = normalized.split("\n");
+    const firstLine = lines[0] || "";
+    if (!/^\*.+:\*$/.test(firstLine)) return normalized;
+
+    let bodyStartIndex = 1;
+    while (bodyStartIndex < lines.length && !lines[bodyStartIndex]) {
+      bodyStartIndex += 1;
+    }
+
+    return [firstLine, ...lines.slice(bodyStartIndex)].join("\n");
+  }
+
+  async function waitForDraftMatch(input, message, timeoutMs = 250) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (draftMatchesMessage(input, message)) return true;
+      await wait(20);
+    }
+
+    return draftMatchesMessage(input, message);
+  }
+
+  async function waitForDraftClear(input, timeoutMs = 150) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (!normalizeOutgoingMessage(getDraftText(input))) return true;
+      await wait(20);
+    }
+
+    return !normalizeOutgoingMessage(getDraftText(input));
   }
 
   function getDraftText(input) {
@@ -604,6 +780,15 @@
 
     range.selectNodeContents(element);
     range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function selectMessageInputContents(input) {
+    const selection = window.getSelection();
+    const range = document.createRange();
+
+    range.selectNodeContents(input);
     selection.removeAllRanges();
     selection.addRange(range);
   }
@@ -644,6 +829,97 @@
 
     const buttons = Array.from(footer.querySelectorAll("button, div[role='button']")).filter(isVisible);
     return buttons[buttons.length - 1] || null;
+  }
+
+  async function waitForSendButton(timeoutMs = 1500) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const sendButton = findSendButton();
+      if (sendButton) return sendButton;
+      await wait(20);
+    }
+
+    return findSendButton();
+  }
+
+  function shouldAutoPrefixOutgoingMessages() {
+    return Boolean(config.attendantName && activeChat?.id);
+  }
+
+  function draftHasAttendantHeader(draftText) {
+    const normalizedDraft = normalizeOutgoingMessage(draftText);
+    if (!normalizedDraft) return false;
+
+    const normalizedHeader = normalizeOutgoingMessage(getAttendantHeaderLine());
+    const firstLine = normalizedDraft.split("\n")[0] || "";
+    return firstLine === normalizedHeader || firstLine.startsWith(`${normalizedHeader} `);
+  }
+
+  function shouldPrefixDraftWithAttendantHeader(draftText) {
+    const normalizedDraft = normalizeOutgoingMessage(draftText);
+    if (!shouldAutoPrefixOutgoingMessages() || !normalizedDraft) return false;
+    return !draftHasAttendantHeader(normalizedDraft);
+  }
+
+  async function prefixAndSendCurrentDraft(input) {
+    if (!input || isInjectingAttendantHeader) return;
+
+    const draftText = getDraftText(input);
+    if (!shouldPrefixDraftWithAttendantHeader(draftText)) return;
+
+    isInjectingAttendantHeader = true;
+
+    try {
+      clearError();
+      const fullMessage = formatAttendantMessage(draftText.split(/\r?\n/));
+      const messageLines = normalizeOutgoingMessageLines(fullMessage);
+
+      await replaceDraftMessage(input, messageLines);
+
+      const sendButton = await waitForSendButton();
+      if (!sendButton) {
+        throw new Error("Nao encontrei o botao de enviar do WhatsApp.");
+      }
+
+      await clickWhatsAppSendButton(sendButton);
+    } catch (error) {
+      console.error("Erro ao aplicar cabecalho automaticamente:", error);
+      showError(error.message || "Nao consegui aplicar o cabecalho automaticamente.");
+    } finally {
+      isInjectingAttendantHeader = false;
+    }
+  }
+
+  function handleSendButtonClick(event) {
+    if (isProgrammaticSend || isInjectingAttendantHeader || event.defaultPrevented) return;
+
+    const sendButton = findSendButton();
+    if (!sendButton || !sendButton.contains(event.target)) return;
+
+    const input = findMessageInput();
+    if (!input || !shouldPrefixDraftWithAttendantHeader(getDraftText(input))) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    prefixAndSendCurrentDraft(input);
+  }
+
+  function handleSendShortcut(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+
+    const input = findMessageInput();
+    if (!input || !input.contains(event.target)) return;
+    if (isInjectingAttendantHeader) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (isProgrammaticSend || event.defaultPrevented) return;
+    if (!shouldPrefixDraftWithAttendantHeader(getDraftText(input))) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    prefixAndSendCurrentDraft(input);
   }
 
   async function markActiveChatAsUnread() {
@@ -914,10 +1190,13 @@
   });
 
   chrome.storage.onChanged.addListener((changes) => {
-    if (changes.attendantName || changes.apiUrl) {
+    if (changes.attendantName || changes.apiUrl || changes.feedbackUrl) {
       loadConfig();
     }
   });
+
+  document.addEventListener("click", handleSendButtonClick, true);
+  document.addEventListener("keydown", handleSendShortcut, true);
 
   loadConfig();
 })();
