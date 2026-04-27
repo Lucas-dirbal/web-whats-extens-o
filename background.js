@@ -24,7 +24,14 @@ async function callApi(message) {
     throw new Error(await buildApiError(response));
   }
 
-  return response.json();
+  const text = await response.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return text;
+  }
 }
 
 function normalizeApiUrl(value) {

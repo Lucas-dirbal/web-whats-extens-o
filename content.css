@@ -164,6 +164,50 @@
   background: #912018;
 }
 
+.sw-message-box {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sw-message-box textarea {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #c7d1db;
+  border-radius: 6px;
+  color: #1f2933;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.sw-message-box textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sw-message-box button {
+  min-height: 34px;
+  border: 1px solid #0f766e;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sw-message-box button:hover:not(:disabled) {
+  background: #115e59;
+}
+
+.sw-message-box button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .sw-footer {
   display: flex;
   justify-content: space-between;

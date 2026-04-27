@@ -25,6 +25,7 @@
   let isInjectingAttendantHeader = false;
   let isProgrammaticSend = false;
   let uiError = "";
+  let customMessageDraft = "";
   const resolvedIncomingMarkers = new Map();
   let isDragging = false;
   let dragOffset = { x: 0, y: 0 };
@@ -245,6 +246,11 @@
           <button class="danger" id="sw-finish" ${!canAct() ? "disabled" : ""}>Finalizar atendimento</button>
           <button class="danger" id="sw-finish-inactivity" ${!canAct() ? "disabled" : ""}>Finalizar por Inatividade</button>
         </div>
+        <div class="sw-message-box">
+          <label class="sw-label" for="sw-message">Mensagem rapida</label>
+          <textarea id="sw-message" rows="4" ${!canAct() ? "disabled" : ""} placeholder="Digite uma mensagem para enviar com seu nome"></textarea>
+          <button id="sw-send-message" ${!canAct() ? "disabled" : ""}>Enviar mensagem</button>
+        </div>
         <div id="sw-error" class="${errorClass}">${escapeHtml(uiError)}</div>
       </div>
       <div class="${footerClass}">
@@ -273,6 +279,14 @@
     panel.querySelector("#sw-complete")?.addEventListener("click", resolveAttendance);
     panel.querySelector("#sw-finish")?.addEventListener("click", finishAttendance);
     panel.querySelector("#sw-finish-inactivity")?.addEventListener("click", finishAttendanceByInactivity);
+    const messageInput = panel.querySelector("#sw-message");
+    if (messageInput) {
+      messageInput.value = customMessageDraft;
+      messageInput.addEventListener("input", () => {
+        customMessageDraft = messageInput.value;
+      });
+    }
+    panel.querySelector("#sw-send-message")?.addEventListener("click", sendCustomMessage);
   }
 
   function applyPanelPosition(panel) {
@@ -304,7 +318,7 @@
   }
 
   async function requestJson(baseUrl, path, options = {}) {
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessage({
       type: "api",
       apiUrl: baseUrl,
       path,
@@ -319,6 +333,22 @@
     return response.data;
   }
 
+  function sendRuntimeMessage(message) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({
+            ok: false,
+            error: chrome.runtime.lastError.message || "Nao foi possivel falar com a extensao."
+          });
+          return;
+        }
+
+        resolve(response);
+      });
+    });
+  }
+
   async function api(path, options = {}) {
     return requestJson(config.apiUrl, path, options);
   }
@@ -328,20 +358,59 @@
       throw new Error("Configure a URL do site de avaliacao no popup da extensao.");
     }
 
-    const response = await requestJson(config.feedbackUrl, "/api/feedback-links", {
-      method: "POST",
-      body: {
-        attendant: config.attendantName,
-        conversationId: activeChat?.id || "",
-        conversationTitle: activeChat?.title || ""
-      }
-    });
+    try {
+      const response = await requestJson(config.feedbackUrl, "/api/feedback-links", {
+        method: "POST",
+        body: {
+          attendant: config.attendantName,
+          conversationId: activeChat?.id || "",
+          conversationTitle: activeChat?.title || ""
+        }
+      });
 
-    if (!response?.url) {
-      throw new Error("A API de avaliacao nao retornou um link valido.");
+      if (response?.url) {
+        return response.url;
+      }
+    } catch (error) {
+      if (!canFallbackToAttendantFeedbackPage(error)) {
+        throw error;
+      }
     }
 
-    return response.url;
+    return buildAttendantFeedbackUrl();
+  }
+
+  function canFallbackToAttendantFeedbackPage(error) {
+    const message = String(error?.message || "");
+    return (
+      message.includes("404") ||
+      message.includes("405") ||
+      message.toLowerCase().includes("arquivo nao encontrado") ||
+      message.toLowerCase().includes("metodo nao permitido")
+    );
+  }
+
+  function buildAttendantFeedbackUrl() {
+    const attendantSlug = slugifyAttendantName(config.attendantName);
+
+    if (!attendantSlug) {
+      throw new Error("Selecione um atendente para gerar o link de avaliacao.");
+    }
+
+    const url = new URL(`${attendantSlug}.html`, `${config.feedbackUrl}/`);
+    if (activeChat?.id) url.searchParams.set("conversationId", activeChat.id);
+    if (activeChat?.title) url.searchParams.set("conversationTitle", activeChat.title);
+    return url.toString();
+  }
+
+  function slugifyAttendantName(name) {
+    return String(name || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
   }
 
   async function refreshActiveChat() {
@@ -546,6 +615,7 @@
     await runSendingAction(async () => {
       const fullMessage = formatAttendantMessage(userMessage.split(/\r?\n/));
       await sendWhatsAppMessage(fullMessage);
+      customMessageDraft = "";
     }, "Não consegui enviar a mensagem.");
   }
 
