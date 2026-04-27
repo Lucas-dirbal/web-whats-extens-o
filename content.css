@@ -164,6 +164,15 @@
   background: #912018;
 }
 
+.sw-actions .secondary-danger {
+  border-color: #c2410c;
+  background: #c2410c;
+}
+
+.sw-actions .secondary-danger:hover:not(:disabled) {
+  background: #9a3412;
+}
+
 .sw-message-box {
   display: grid;
   gap: 8px;

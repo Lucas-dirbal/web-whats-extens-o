@@ -61,7 +61,8 @@ Site de avaliacao: https://avaliacao-de-atendimento.vercel.app
 5. Clique em `Pendente` para devolver a conversa para acompanhamento.
 6. Clique em `Concluido` para apenas alterar o status para resolvida.
 7. Clique em `Finalizar atendimento` para enviar encerramento com link de avaliacao.
-8. Clique em `Finalizar por Inatividade` para encerrar sem avaliacao.
+8. Clique em `Finalizar sem enviar link` para marcar como resolvida sem enviar mensagem nem gerar link.
+9. Clique em `Finalizar por Inatividade` para encerrar sem avaliacao.
 
 ## Rodar API local
 

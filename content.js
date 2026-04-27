@@ -244,6 +244,7 @@
           <button id="sw-pending" ${!canAct() ? "disabled" : ""}>Pendente</button>
           <button id="sw-complete" ${!canAct() ? "disabled" : ""}>Concluído</button>
           <button class="danger" id="sw-finish" ${!canAct() ? "disabled" : ""}>Finalizar atendimento</button>
+          <button class="danger secondary-danger" id="sw-finish-no-link" ${!canAct() ? "disabled" : ""}>Finalizar sem enviar link</button>
           <button class="danger" id="sw-finish-inactivity" ${!canAct() ? "disabled" : ""}>Finalizar por Inatividade</button>
         </div>
         <div class="sw-message-box">
@@ -278,6 +279,7 @@
     panel.querySelector("#sw-pending")?.addEventListener("click", markPendingAttendance);
     panel.querySelector("#sw-complete")?.addEventListener("click", resolveAttendance);
     panel.querySelector("#sw-finish")?.addEventListener("click", finishAttendance);
+    panel.querySelector("#sw-finish-no-link")?.addEventListener("click", finishAttendanceWithoutLink);
     panel.querySelector("#sw-finish-inactivity")?.addEventListener("click", finishAttendanceByInactivity);
     const messageInput = panel.querySelector("#sw-message");
     if (messageInput) {
@@ -589,6 +591,12 @@
       await sendWhatsAppMessage(getClosingMessage(feedbackLink));
       await updateConversation("resolved", config.attendantName);
     }, "Não consegui concluir o atendimento.");
+  }
+
+  async function finishAttendanceWithoutLink() {
+    if (!canAct()) return;
+
+    await updateConversation("resolved", config.attendantName);
   }
 
   async function finishAttendanceByInactivity() {
