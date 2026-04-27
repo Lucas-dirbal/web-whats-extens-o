@@ -71,6 +71,13 @@
     ]);
   }
 
+  function getClosingMessageWithoutLink() {
+    return formatAttendantMessage([
+      "Atendimento concluido.",
+      "Agradecemos seu contato e a confianca na Interface Sistemas Inteligentes. Sempre que precisar, estamos a disposicao."
+    ]);
+  }
+
   function getInactivityClosingMessage() {
     return formatAttendantMessage("Atendimento encerrado devido à ausência de retorno. Caso precise de suporte, estaremos à disposição.");
   }
@@ -596,7 +603,10 @@
   async function finishAttendanceWithoutLink() {
     if (!canAct()) return;
 
-    await updateConversation("resolved", config.attendantName);
+    await runSendingAction(async () => {
+      await sendWhatsAppMessage(getClosingMessageWithoutLink());
+      await updateConversation("resolved", config.attendantName);
+    }, "Nao consegui concluir sem enviar link.");
   }
 
   async function finishAttendanceByInactivity() {
